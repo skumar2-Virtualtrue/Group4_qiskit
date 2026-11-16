@@ -1,4 +1,5 @@
 import json
+from policy import make_policy
 from simulator import run_one_hop, run_two_hop, run_variant_scenario
 
 with open("variant_params.json") as f:
@@ -26,14 +27,19 @@ for seed in test_seeds:
 
 print("\n<--- VARIANT -->")
 
-test_seeds = [main_seed, 2005, 2006, 2007, 2008]
-for seed in test_seeds:
-    result = run_variant_scenario(params, sim_time_ms, seed, policy=None)
+seeds = [
+    params["grading"]["seed"],
+    *params["grading"]["held_out_seeds"]
+]
 
-    print(
-        f"Seed {seed}: "
-        f"Rate = {result['rate']:.3f} pairs/s, "
-        f"Fidelity = {result['mean_fidelity']:.4f}, "
-        f"p95 latency = {result['p95_latency_ms']:.2f} ms, "
-        f"Pairs consumed per delivery = {result['pairs_consumed_per_delivery']:.2f}"
+for seed in seeds:
+    policy = make_policy(params)
+
+    result = run_variant_scenario(
+        params,
+        sim_time_ms=params["grading"]["sim_time_ms"],
+        seed=seed,
+        policy=policy
     )
+
+    print(f"Seed {seed}: {result}")
