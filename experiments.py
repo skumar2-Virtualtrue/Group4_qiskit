@@ -15,8 +15,12 @@ Output contract (autograded): write experiment_results.json containing
   ]
 }
 CI: 95% t-interval half-width over the per-seed rates.
+
+AI-assistant use declaration: run_sensitivity was written with help from
+Claude (Anthropic AI assistant) and reviewed by Group 4.
 """
 
+import copy
 import json
 import math
 
@@ -40,16 +44,54 @@ def mean_ci95(values):
     return m, t * s / math.sqrt(n)
 
 
-def run_sensitivity(params, seeds) -> dict:
-    """TODO: implement the OAT sweep described above.
-    For each t2 in params['experiment']['t2_grid_ms']:
-      - deep-copy params, set params_copy['physics']['t2_ms'] = t2
-      - for each seed in seeds[:seeds_per_point]: run the variant scenario
-        with your policy (make_policy(params_copy)) and record 'rate'
-      - append {"t2_ms": ..., "rate_mean": ..., "rate_ci95": ..., "n_seeds": ...}
-    Write the results dict to experiment_results.json and return it.
+def run_sensitivity(params, seeds, sim_time_ms=None,
+                    out_path="experiment_results.json") -> dict:
+    """One-at-a-time (OAT) sweep of delivered rate against memory T2.
+
+    For each T2 value in the grid we change ONLY physics.t2_ms (everything
+    else stays as in the variant), run the variant scenario once per seed,
+    and summarise the per-seed rates as mean +/- 95% t-interval half-width.
     """
-    raise NotImplementedError("TODO: implement run_sensitivity")
+    exp = params["experiment"]
+    grid = list(exp["t2_grid_ms"])
+    seeds_per_point = int(exp["seeds_per_point"])
+    if sim_time_ms is None:
+        sim_time_ms = params["grading"]["sim_time_ms"]
+
+    use_seeds = list(seeds)[:seeds_per_point]
+    if len(use_seeds) < seeds_per_point:
+        raise ValueError(f"need at least {seeds_per_point} seeds, "
+                         f"got {len(use_seeds)}")
+
+    points = []
+    for t2 in grid:
+        # copy so one grid point can never change another (or the caller's params)
+        params_copy = copy.deepcopy(params)
+        params_copy["physics"]["t2_ms"] = t2
+
+        rates = []
+        for seed in use_seeds:
+            policy = make_policy(params_copy)   # fresh policy per run
+            result = run_variant_scenario(params_copy, sim_time_ms, seed, policy)
+            rates.append(float(result["rate"]))
+
+        mean, half_width = mean_ci95(rates)
+        points.append({
+            "t2_ms": t2,
+            "rate_mean": mean,
+            "rate_ci95": half_width,
+            "n_seeds": len(rates),
+        })
+
+    results = {
+        "parameter": "t2_ms",
+        "grid": grid,
+        "seeds_per_point": seeds_per_point,
+        "points": points,
+    }
+    with open(out_path, "w") as f:
+        json.dump(results, f, indent=2)
+    return results
 
 
 if __name__ == "__main__":
